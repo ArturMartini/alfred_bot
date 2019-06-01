@@ -1,25 +1,34 @@
 package control
 
 import (
+	"alfred/canonical"
+	"alfred/email"
+	"alfred/repository"
 	"github.com/nlopes/slack"
 	"strings"
 )
 
 var (
 	commands = map[string]func(Message) Message{
-		"hello":     hello,
-		"help":      help,
-		"configure": configure,
-		"send":      send,
+		"hello":         hello,
+		"help":          help,
+		"configure":     configure,
+		"configure add": configure_add,
+		"send":          send,
 	}
 
 	users = map[string]*User{
 	}
 
+	repo repository.Repository
 )
 
+func init() {
+	repo = repository.New()
+}
+
 type Message struct {
-	Name string
+	Nick string
 	User string
 	Text string
 }
@@ -34,8 +43,8 @@ type User struct {
 	EmailCco     string
 }
 
-func hello(_ Message) Message {
-	return Message{Text: "My name is Alfred and i am is your new butler. What do you want?"}
+func hello(message Message) Message {
+	return Message{Text: "Welcome " + message.Nick + "! My name is Alfred and i am is your new butler. What do you want? Little Robin.."}
 }
 
 func help(_ Message) Message {
@@ -46,23 +55,72 @@ func help(_ Message) Message {
 }
 
 func configure(message Message) Message {
-	text := "Hello Sr. " + message.Name + "\n" +
+	text := "Hello Sr. " + message.Nick + "\n" +
 		"I need some information for configure automation of send email\n" +
-		"- email (your@email.com)\n" +
-		"- password \n" +
-		"- template \n" +
-		"- args template \n" +
-		"- to \n" +
-		"- copy to \n"
+		"Execute command above:\n" +
+		"configure add -email your@email.com -pass your_password -template your_template"
 
 	return Message{
-		Name: message.Name,
+		Nick: message.Nick,
 		Text: text,
 	}
 }
 
-func send(_ Message) Message {
-	return Message{Text: "My name is Alfred and i am is your new butler. What do you want?"}
+func configure_add(message Message) Message {
+	text := ""
+	text = strings.Replace(text, "configure add", "", -1)
+	text = strings.Replace(text, "-", "", -1)
+	text = strings.Replace(text, "  ", " ", -1)
+	cmds := strings.Split(text, " ")
+
+	indexEmail := 0
+	indexPass := 0
+	indexTemplate := 0
+
+	for index, key := range cmds {
+		switch key {
+		case "email":
+			indexEmail += index
+		case "pass":
+			indexPass += index
+		case "template":
+			indexTemplate += index
+		}
+	}
+
+	config := canonical.Configuration{
+		Email:    cmds[indexEmail],
+		Pass:     cmds[indexPass],
+		Template: cmds[indexTemplate],
+	}
+
+	err := repo.Update(config); if err != nil {
+		return Message{
+			Nick: message.Nick,
+			Text: "Sorry Sr " + message.Nick + ". I'm busy with billions of other things you told me to do. You really think it's batman.",
+		}
+	}
+
+	return Message{
+		Nick: message.Nick,
+		Text: "Your configuration haas been saved, Little Robin.",
+	}
+
+}
+
+func send(message Message) Message {
+	success := email.Send()
+	if success {
+		return Message{
+			Nick: message.Nick,
+			Text: "Your email has been sent.",
+		}
+	} else {
+		return Message{
+			Nick: message.Nick,
+			Text: "Error ocurred when try send email, try again later.",
+		}
+	}
 }
 
 func ProcessMessage(ev *slack.MessageEvent) Message {
@@ -70,9 +128,9 @@ func ProcessMessage(ev *slack.MessageEvent) Message {
 	cmd := commands[message.Text];
 	if cmd == nil {
 		return Message{
-			message.Name,
-			extractUser(message.Text),
-			"Sorry Sr. " + message.Name + " Im not understand what you say",
+			message.Nick,
+			message.User,
+			"Sorry Sr " + message.Nick + ". Im not understand what you say",
 		}
 	}
 	return cmd(message)
@@ -80,11 +138,10 @@ func ProcessMessage(ev *slack.MessageEvent) Message {
 
 func translateEventToMessage(event *slack.MessageEvent) Message {
 	text := event.Text
-	name := event.Name
-	user := extractUser(text)
-	text = removeUser(text, user)
+	nick := "<@" + event.User + ">"
+	user := event.User
 	return Message{
-		Name: name,
+		Nick: nick,
 		User: user,
 		Text: text,
 	}
@@ -93,13 +150,4 @@ func translateEventToMessage(event *slack.MessageEvent) Message {
 func removeUser(text, user string) string {
 	newText := strings.Replace(text, "<"+user+">", "", -1)
 	return strings.TrimSpace(newText)
-}
-
-func extractUser(text string) string {
-	end := strings.LastIndexAny(text, ">")
-	if end < 0 {
-		return ""
-	} else {
-		return text[1:end]
-	}
 }
