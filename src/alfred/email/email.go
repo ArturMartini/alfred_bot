@@ -7,7 +7,7 @@ import (
 
 func Send() bool {
 	from := "arturmartiniti@gmail.com"
-	pass := "Select*13"
+	pass := "*******"
 	to := []string{"arturmartiniti@gmail.com"}
 
 	msg := "From: " + from + "\n" +
